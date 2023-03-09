@@ -1,0 +1,116 @@
+---------------- HARD Questions -----------------
+-------------------------------------------------
+------ [Sales] 3 Topping Pizzas ------
+/* 
+Given a list of pizza toppings, consider all the possible 3-topping pizzas, and print out the total cost of those 3 toppings. Sort the results with the highest total cost on the top followed by pizza toppings in ascending order.
+Break ties by listing the ingredients in alphabetical order, starting from the first ingredient, followed by the second and third.
+
+Methods:
+1. Self-join
+2. Cross-join
+*/
+-- Self-join
+SELECT 
+  concat(p1.topping_name, ',', p2.topping_name, ',', p3.topping_name) as pizza,
+  p1.ingredient_cost+p2.ingredient_cost+p3.ingredient_cost as total_cost
+FROM pizza_toppings p1
+inner join pizza_toppings p2 on p1.topping_name < p2.topping_name
+inner join pizza_toppings p3 on p2.topping_name < p3.topping_name
+order by total_cost desc, pizza;
+
+-- Cross-join
+SELECT 
+  concat(p1.topping_name, ',', p2.topping_name, ',', p3.topping_name) as pizza,
+  p1.ingredient_cost+p2.ingredient_cost+p3.ingredient_cost as total_cost
+from pizza_toppings p1
+cross JOIN pizza_toppings p2, pizza_toppings p3
+where p1.topping_name < p2.topping_name
+  and p2.topping_name < p3.topping_name
+ORDER BY total_cost desc, pizza;
+
+
+------ [Marketing] Advertiser Status ------
+/* 
+Method: T-SQL, conditional logic, join, union
+
+Definition of advertiser status:
+New: newly registered users who made their first payment.
+Existing: users who paid previously and recently made a current payment.
+Churn: users who paid previously, but have yet to make any recent payment.
+Resurrect: users who did not pay recently but may have made a previous payment and have made payment again recently.
+*/
+
+with current_status as (
+  SELECT a.user_id, a.status, d.paid
+  FROM advertiser a 
+  LEFT JOIN daily_pay d on a.user_id = d.user_id
+  UNION
+  select d.user_id, a.status, d.paid
+  from daily_pay d 
+  LEFT JOIN advertiser a on d.user_id = a.user_id
+)
+select user_id,
+  CASE WHEN paid is NULL then 'CHURN'
+       when status != 'CHURN' and paid is not NULL then 'EXISTING'
+       when status = 'CHURN' and paid is not NULL then 'RESURRECT'
+       when status is NULL then 'NEW'
+  END new_status
+from current_status
+order by user_id;
+
+
+
+------ [Finance] Year-over-year Growth Rate ------
+/*
+Method: nested T-SQL, time-series Lag
+
+Assume you are given the table below containing information on user transactions for particular products. Write a query to obtain the year-on-year growth rate for the total spend of each product for each year.
+Output the year (in ascending order) partitioned by product id, current year's spend, previous year's spend and year-on-year growth rate (percentage rounded to 2 decimal places).
+*/
+
+with total_spend as (
+  SELECT date_part('year', transaction_date::date) as year,
+         product_id, 
+         sum(spend) as curr_year_spend
+  FROM user_transactions
+  GROUP BY 1, 2
+),
+timeseries_spend as (
+  select *,
+         lag(curr_year_spend, 1) over(partition by product_id order by year) prev_year_spend
+  from total_spend
+)
+select year, 
+       product_id, 
+       curr_year_spend,
+       prev_year_spend,
+       round(100.0*(curr_year_spend - prev_year_spend) / prev_year_spend, 2) as yoy_rate
+from timeseries_spend
+order by product_id, year;
+
+
+------ [HR] Get Nth Highest Salary  ------
+/*
+Method: Create a user-defined function which takes a table input and return salary output. Then call function for the required Nth salary.
+*/
+
+create function getNthHighestSalary(@N int)
+return int
+as
+begin
+  declare @salaryrnk table (salary int, rnk int)
+  insert into @salaryrnk
+    select salary, 
+           dense_rank() over(order by salary desc) as rnk
+    from Employee
+  
+  return (
+    select distinct salary
+    from @salaryrnk
+    where rnk = @N
+  )
+End;
+
+-- Example: Call function to get the 2nd salary
+dbo.getNthHighestSalary(2);
+
